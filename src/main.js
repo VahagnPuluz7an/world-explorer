@@ -70,7 +70,7 @@ function spin() {
 map.on('moveend', spin);
 ['mousedown', 'touchstart', 'wheel'].forEach((e) => map.on(e, () => (spinning = false)));
 
-if (import.meta.env.DEV) window.__map = map;
+if (import.meta.env.DEV) { window.__map = map; window.__state = state; window.__render = () => render(); }
 let firstSymbol;
 map.on('style.load', () => {
   map.setProjection({ type: 'globe' });
@@ -638,7 +638,9 @@ async function enter(user) {
     else map.easeTo({ center: map.getCenter(), zoom: Math.max(1.6, Math.min(map.getZoom(), 2.2)), padding: 0, duration: 800 });
   };
   setTimeout(() => map.resize(), 650); // after the login overlay fades out
-  map.loaded() ? go() : map.once('load', go);
+  // map.loaded() is false while tiles stream in, and 'load' fires only once — so wait for our own layers instead
+  const ready = () => map.getSource('marks') && map.getLayer('paint-adm3');
+  if (ready()) go(); else { const iv = setInterval(() => { if (ready()) { clearInterval(iv); go(); } }, 150); }
   toast(t('hello', { name: user.name }));
 }
 
