@@ -13,7 +13,8 @@
     "@supabase/supabase-js": "^2.119.0",
     "i18n-iso-countries": "^7.14.0",
     "maplibre-gl": "^5.24.0",
-    "pmtiles": "^4.5.0"
+    "pmtiles": "^4.5.0",
+    "polygon-clipping": "^0.15.7"
   },
   "devDependencies": {
     "vite": "^6.4.6"

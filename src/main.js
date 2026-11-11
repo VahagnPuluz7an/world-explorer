@@ -9,14 +9,14 @@ import ruNames from 'i18n-iso-countries/langs/ru.json';
 import enNames from 'i18n-iso-countries/langs/en.json';
 [hyNames, ruNames, enNames].forEach((l) => countries.registerLocale(l));
 import { Protocol } from 'pmtiles';
+import polygonClipping from 'polygon-clipping';
 
 const pmt = new Protocol(); maplibregl.addProtocol('pmtiles', pmt.tile);
-const admUrl = (l) => `pmtiles://${new URL(import.meta.env.BASE_URL + 'tiles/' + l + '.pmtiles', location.origin)}`;
 const LV = ['adm0', 'adm1', 'adm2', 'adm3'];
 
 const $ = (s) => document.querySelector(s);
 const COLORS = ['#ff3d7f', '#ff7a3d', '#ffd23d', '#5cff8a', '#3dd9ff', '#3d7bff', '#7b5cff', '#d13dff', '#ffffff'];
-const COUNTRIES_URL = 'https://cdn.jsdelivr.net/gh/nvkelso/natural-earth-vector@v5.1.2/geojson/ne_110m_admin_0_countries.geojson';
+const COUNTRIES_URL = import.meta.env.BASE_URL + 'data/countries110.geojson';
 
 const state = {
   user: null, marks: [], tool: 'pan', color: COLORS[0], size: 18, opacity: 0.65,
@@ -36,9 +36,55 @@ const HINTS = {
 };
 
 // ---------------- MAP ----------------
+// ---------- clean self-hosted basemap: white land, black outlines, names; more detail as you zoom ----------
+const tileSrc = (name, minzoom, maxzoom) => ({ type: 'vector', minzoom, maxzoom, promoteId: 'id',
+  tiles: [`pmtiles://${new URL(import.meta.env.BASE_URL + 'tiles/' + name + '.pmtiles', location.origin)}/{z}/{x}/{y}`] });
+const labelField = () => ['coalesce', ['get', lang], ['get', 'en']];
+function buildStyle() {
+  const OCEAN = '#d6dbe3', INK = '#111';
+  return {
+    version: 8,
+    glyphs: new URL(import.meta.env.BASE_URL + 'fonts/{fontstack}/{range}.pbf', location.origin).href.replace('%7Bfontstack%7D', '{fontstack}').replace('%7Brange%7D', '{range}'),
+    sources: {
+      base: tileSrc('base', 0, 7),
+      adm0: tileSrc('adm0', 0, 6), adm1: tileSrc('adm1', 2, 8), adm2: tileSrc('adm2', 5, 9), adm3: tileSrc('adm3', 7, 9),
+    },
+    layers: [
+      { id: 'ocean', type: 'background', paint: { 'background-color': OCEAN } },
+      { id: 'land', type: 'fill', source: 'base', 'source-layer': 'land', maxzoom: 5, paint: { 'fill-color': '#ffffff' } },
+      // closer in, land comes from the same boundaries as the outlines, so the coast lines up
+      { id: 'land-adm0', type: 'fill', source: 'adm0', 'source-layer': 'adm0', minzoom: 5, paint: { 'fill-color': '#ffffff' } },
+      { id: 'lakes', type: 'fill', source: 'base', 'source-layer': 'lakes', minzoom: 3, paint: { 'fill-color': OCEAN } },
+      { id: 'line-adm3', type: 'line', source: 'adm3', 'source-layer': 'adm3', minzoom: 8.5,
+        paint: { 'line-color': INK, 'line-width': 0.6, 'line-opacity': ['interpolate', ['linear'], ['zoom'], 8.5, 0, 9.5, 0.35] } },
+      { id: 'line-adm2', type: 'line', source: 'adm2', 'source-layer': 'adm2', minzoom: 6,
+        paint: { 'line-color': INK, 'line-width': 0.7, 'line-opacity': ['interpolate', ['linear'], ['zoom'], 6, 0, 7, 0.45] } },
+      { id: 'line-adm1', type: 'line', source: 'adm1', 'source-layer': 'adm1', minzoom: 3,
+        paint: { 'line-color': INK, 'line-width': ['interpolate', ['linear'], ['zoom'], 3, 0.4, 8, 1], 'line-opacity': ['interpolate', ['linear'], ['zoom'], 3, 0, 4, 0.6] } },
+      { id: 'line-adm0', type: 'line', source: 'adm0', 'source-layer': 'adm0',
+        paint: { 'line-color': INK, 'line-width': ['interpolate', ['linear'], ['zoom'], 0, 0.6, 5, 1.4, 10, 2] } },
+      ...[['adm1', 4.5, 7, 12], ['adm2', 7, 9.5, 11.5], ['adm3', 9.5, 24, 11]].map(([l, min, max, size]) => ({
+        id: `label-${l}`, type: 'symbol', source: l, 'source-layer': l, minzoom: min, maxzoom: max,
+        layout: { 'text-field': ['get', 'name'], 'text-font': ['Noto Sans Regular'], 'text-size': size, 'text-max-width': 8, 'text-padding': 28 },
+        paint: { 'text-color': '#666', 'text-halo-color': '#fff', 'text-halo-width': 1.4 } })),
+      { id: 'label-places', type: 'symbol', source: 'base', 'source-layer': 'places', minzoom: 3,
+        layout: { 'text-field': labelField(), 'text-font': ['Noto Sans Regular'], 'symbol-sort-key': ['get', 'rank'],
+          'text-size': ['interpolate', ['linear'], ['zoom'], 3, ['case', ['==', ['get', 'cap'], 1], 12, 10], 10, ['case', ['==', ['get', 'cap'], 1], 16, 13]] },
+        paint: { 'text-color': '#222', 'text-halo-color': '#fff', 'text-halo-width': 1.6 } },
+      { id: 'label-countries', type: 'symbol', source: 'base', 'source-layer': 'countries', maxzoom: 6,
+        layout: { 'text-field': labelField(), 'text-font': ['Noto Sans Bold'], 'symbol-sort-key': ['get', 'rank'],
+          'text-transform': 'uppercase', 'text-letter-spacing': 0.08, 'text-max-width': 7,
+          'text-size': ['interpolate', ['linear'], ['zoom'], 1, 9, 5, 14] },
+        paint: { 'text-color': '#000', 'text-halo-color': '#fff', 'text-halo-width': 1.4,
+          'text-opacity': ['interpolate', ['linear'], ['zoom'], 5, 1, 6, 0] } },
+    ],
+  };
+}
+
 const map = new maplibregl.Map({
   container: 'map',
-  style: 'https://tiles.openfreemap.org/styles/liberty',
+  style: buildStyle(),
+  maxZoom: 14,
   center: [105, 25], zoom: 1.5, maxPitch: 70,
   attributionControl: { compact: true },
   pixelRatio: Math.min(devicePixelRatio || 1, 2), // phones with 3x screens render 2.25x fewer pixels
@@ -75,42 +121,16 @@ let firstSymbol;
 map.on('style.load', () => {
   map.setProjection({ type: 'globe' });
   map.setSky({
-    'sky-color': '#0b1240', 'horizon-color': '#3a5bd9', 'fog-color': '#ffffff',
+    'sky-color': '#0b1240', 'horizon-color': '#9fb4ff', 'fog-color': '#ffffff',
     'sky-horizon-blend': 0.6, 'horizon-fog-blend': 0.6, 'fog-ground-blend': 0.9, 'atmosphere-blend': ['interpolate', ['linear'], ['zoom'], 0, 1, 6, 0.4, 10, 0],
   });
-  firstSymbol = map.getStyle().layers.find((l) => l.type === 'symbol')?.id;
-  grayscale();
-  for (const id of ['building-3d']) if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', 'none');
-  localizeLabels();
+  firstSymbol = 'line-adm3'; // paint goes under the outlines and labels
   setupLayers();
   spin();
 });
 
-// ---------- black & white base map so the paint pops ----------
-const cctx = document.createElement('canvas').getContext('2d');
-function toGray(str) {
-  cctx.fillStyle = '#000'; cctx.fillStyle = str; const v = cctx.fillStyle;
-  let r, g, b, a = 1;
-  if (v[0] === '#') [r, g, b] = [1, 3, 5].map((i) => parseInt(v.slice(i, i + 2), 16));
-  else { const m = v.match(/[\d.]+/g); if (!m) return str; [r, g, b, a = 1] = m.map(Number); }
-  const y = Math.round(0.299 * r + 0.587 * g + 0.114 * b);
-  return `rgba(${y},${y},${y},${a})`;
-}
-const isColor = (x) => typeof x === 'string' && /^(#|rgb|hsl)/i.test(x.trim());
-const grayDeep = (v) => Array.isArray(v) ? v.map(grayDeep) : isColor(v) ? toGray(v) : v;
 function localizeLabels() {
-  for (const l of map.getStyle().layers) {
-    if (l.type !== 'symbol' || !l.layout?.['text-field'] || !JSON.stringify(l.layout['text-field']).includes('name')) continue;
-    map.setLayoutProperty(l.id, 'text-field', ['coalesce', ['get', 'name:' + lang], ['get', 'name:en'], ['get', 'name']]);
-  }
-}
-function grayscale() {
-  for (const l of map.getStyle().layers) {
-    if (l.type === 'raster') try { map.setPaintProperty(l.id, 'raster-saturation', -1); } catch {}
-    for (const [k, v] of Object.entries(l.paint || {})) {
-      if (k.endsWith('-color')) try { map.setPaintProperty(l.id, k, grayDeep(v)); } catch {}
-    }
-  }
+  for (const id of ['label-places', 'label-countries']) if (map.getLayer(id)) map.setLayoutProperty(id, 'text-field', labelField());
 }
 
 const NONE = ['==', ['get', 'ADM0_A3'], '__none__'];
@@ -130,7 +150,6 @@ async function setupLayers() {
   map.addLayer({ id: 'countries-line', type: 'line', source: 'countries', filter: NONE,
     paint: { 'line-color': '#fff', 'line-width': 1.5, 'line-opacity': 0.8 } }, firstSymbol);
 
-  for (const l of LV) map.addSource(l, { type: 'vector', url: admUrl(l), promoteId: 'id' });
   for (const l of LV) {
     map.addLayer({ id: `hit-${l}`, type: 'fill', source: l, 'source-layer': l, paint: { 'fill-opacity': 0 } }, firstSymbol);
     map.addLayer({ id: `paint-${l}`, type: 'fill', source: l, 'source-layer': l, filter: NONE_ID,
@@ -212,7 +231,7 @@ function render() {
   for (const m of state.marks) {
     const props = { id: m.id, color: m.color, opacity: m.opacity, w: m.size, z: m.zoom };
     if (m.kind === 'stroke') features.push({ type: 'Feature', properties: props, geometry: { type: 'LineString', coordinates: m.data.coords } });
-    else if (m.kind === 'area' && m.data.tile) tileMarks.push(m);
+    else if (m.kind === 'area' && m.data.tile && !m.data.geom) tileMarks.push(m);
     else if (m.kind === 'area') features.push({ type: 'Feature', properties: props, geometry: m.data.geom || { type: 'Polygon', coordinates: m.data.coords } });
     else if (m.kind === 'country') countryMarks.push(m);
   }
@@ -242,7 +261,12 @@ function renderProfile() {
   const OCEAN = t('ocean');
   const groups = {};
   for (const m of state.marks) {
-    if (!m.label && state.countries) { const c = coordsOf(m); m.label = countryAt(c[Math.floor(c.length / 2)])?.name || null; }
+    // older marks only stored a (Russian) country name — work out the country code from the geometry
+    if (!m.data.iso && state.countries) {
+      const cs = coordsOf(m); const pt = cs.length ? cs.reduce((a, c) => [a[0] + c[0] / cs.length, a[1] + c[1] / cs.length], [0, 0]) : null;
+      const hit = pt && (countryAt(pt) || countryAt(cs[Math.floor(cs.length / 2)]));
+      if (hit) m.data.iso = hit.ADM0_A3; else if (!m.label) m.label = null;
+    }
     const k = placeLabel(m) || OCEAN;
     (groups[k] ||= { list: [], color: m.color, full: false }).list.push(m);
     if (m.kind === 'country' || m.data?.level === 0) groups[k].full = true;
@@ -365,6 +389,43 @@ function fitsView(bb) {
   if (bb[2] - bb[0] > 170 && map.getZoom() > 2.2) return false;
   return pts.every(([x, y]) => { const p = map.project([x, y]); return p.x >= -W * pad && p.x <= W * (1 + pad) && p.y >= -H * pad && p.y <= H * (1 + pad); });
 }
+// full outline of a boundary from the loaded tiles (stored with the mark so it shows at every zoom)
+const r5 = (x) => Math.round(x * 1e5) / 1e5;
+function featGeom(layer, id) {
+  const polys = [];
+  for (const f of map.querySourceFeatures(layer, { sourceLayer: layer, filter: ['==', ['get', 'id'], id] })) {
+    const g = f.geometry;
+    for (const p of g.type === 'Polygon' ? [g.coordinates] : g.coordinates) polys.push(p.map((ring) => ring.map(([x, y]) => [r5(x), r5(y)])));
+  }
+  if (!polys.length) return null;
+  // pieces from neighbouring tiles overlap a little — merge them into one clean outline
+  try { return { type: 'MultiPolygon', coordinates: polygonClipping.union(...polys.map((p) => [p])) }; }
+  catch { return { type: 'MultiPolygon', coordinates: polys }; }
+}
+// fill animation: the area washes in with a ripple on its edge
+function animateFill(geom) {
+  if (!geom) return Promise.resolve();
+  const src = map.getSource('draft'); const color = state.color;
+  src.setData({ type: 'FeatureCollection', features: [{ type: 'Feature', properties: { color }, geometry: geom }] });
+  map.setPaintProperty('draft-edge', 'line-dasharray', [1, 0]);
+  return new Promise((done) => {
+    const t0 = performance.now(), D = 550;
+    const step = (now) => {
+      const k = Math.min(1, (now - t0) / D), e = 1 - Math.pow(1 - k, 3);
+      map.setPaintProperty('draft-fill', 'fill-opacity', e * state.opacity);
+      map.setPaintProperty('draft-edge', 'line-width', 1 + 10 * (1 - e));
+      map.setPaintProperty('draft-edge', 'line-opacity', 1 - e * 0.6);
+      if (k < 1) return requestAnimationFrame(step);
+      setTimeout(() => {
+        src.setData({ type: 'FeatureCollection', features: [] });
+        map.setPaintProperty('draft-fill', 'fill-opacity', 0.3); map.setPaintProperty('draft-edge', 'line-width', 2.5);
+        map.setPaintProperty('draft-edge', 'line-opacity', 1); map.setPaintProperty('draft-edge', 'line-dasharray', [2, 1]);
+      }, 60);
+      done();
+    };
+    requestAnimationFrame(step);
+  });
+}
 // at a screen point: biggest boundary that fits on screen; if none fits — the most detailed one
 function pickAt(point) {
   const cands = [];
@@ -449,9 +510,12 @@ map.on('click', async (e) => {
     } catch {} finally { filling = false; $('#map').classList.remove('loading'); }
   }
   const dup = state.marks.find((m) => m.data.tile?.id === c.id);
+  if (filling) return; filling = true; setTimeout(() => (filling = false), 900);
   const name = c.layer === 'adm0' ? countryName(c.iso) : c.name;
   if (dup) { await removeMark(dup.id); return toast(t('unfilled', { name })); }
-  await addMark('area', { tile: { layer: c.layer, id: c.id }, name, tileIso: c.iso, bbox: c.bbox || featBBox(c.layer, c.id) }, [e.lngLat.lng, e.lngLat.lat], countryName(c.iso));
+  const geom = featGeom(c.layer, c.id);
+  await animateFill(geom);
+  await addMark('area', { tile: { layer: c.layer, id: c.id }, geom, name, tileIso: c.iso, bbox: c.bbox || featBBox(c.layer, c.id) }, [e.lngLat.lng, e.lngLat.lat], countryName(c.iso));
   toast(t('filled', { name }));
 });
 function viewSize() {
