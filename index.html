@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>World Explorer — раскрась свой мир</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+</head>
+<body>
+  <div id="stars"></div>
+  <div id="map"></div>
+
+  <!-- AUTH -->
+  <div id="auth" class="overlay">
+    <div class="auth-card glass">
+      <div class="logo">🌍</div>
+      <h1>World Explorer</h1>
+      <p class="sub">Раскрась места, где ты реально был — от страны до улицы.</p>
+      <div class="tabs">
+        <button class="tab active" data-mode="login">Вход</button>
+        <button class="tab" data-mode="signup">Регистрация</button>
+      </div>
+      <form id="auth-form">
+        <input id="f-name" type="text" placeholder="Имя (для профиля)" class="signup-only" autocomplete="nickname" />
+        <input id="f-email" type="email" placeholder="Email" required autocomplete="email" />
+        <input id="f-pass" type="password" placeholder="Пароль (мин. 6 символов)" required minlength="6" autocomplete="current-password" />
+        <button type="submit" class="btn-primary" id="auth-submit">Войти</button>
+        <div id="auth-msg" class="msg"></div>
+      </form>
+      <div id="local-note" class="local-note hidden">
+        ⚠️ Supabase ещё не подключён — работает локальный режим (данные хранятся в этом браузере).
+      </div>
+    </div>
+  </div>
+
+  <!-- TOP BAR -->
+  <header id="topbar" class="glass hidden">
+    <div class="brand">🌍 <span>World Explorer</span></div>
+    <div class="search">
+      <input id="search" placeholder="Найти место: Шанхай, Бали…" />
+      <div id="search-results" class="glass hidden"></div>
+    </div>
+    <button id="profile-btn" class="avatar" title="Профиль">?</button>
+  </header>
+
+  <!-- TOOLBAR -->
+  <aside id="toolbar" class="glass hidden">
+    <button class="tool active" data-tool="pan" title="Двигать (V)"><span>✋</span><small>Двигать</small></button>
+    <button class="tool" data-tool="brush" title="Кисть (B)"><span>🖌️</span><small>Кисть</small></button>
+    <button class="tool" data-tool="fill" title="Заливка (F)"><span>🪣</span><small>Заливка</small></button>
+    <button class="tool" data-tool="eraser" title="Ластик (E)"><span>🧽</span><small>Ластик</small></button>
+    <div class="sep"></div>
+    <button class="tool" id="undo" title="Отменить (Ctrl+Z)"><span>↩️</span><small>Отмена</small></button>
+  </aside>
+
+  <!-- PALETTE -->
+  <div id="palette" class="glass hidden">
+    <div id="colors"></div>
+    <label class="color-custom" title="Свой цвет"><input type="color" id="custom-color" value="#ff3d7f" /><span>＋</span></label>
+    <button id="more-btn" class="more-btn" title="Размер и прозрачность">⚙️</button>
+    <div class="slider">
+      <small>Размер</small>
+      <input type="range" id="size" min="2" max="80" value="18" />
+      <div id="size-preview"></div>
+    </div>
+    <div class="slider">
+      <small>Прозрачность</small>
+      <input type="range" id="opacity" min="15" max="100" value="65" />
+    </div>
+  </div>
+
+  <div id="hint" class="glass hidden"></div>
+  <div id="crosshair" class="hidden"></div>
+
+  <!-- PROFILE -->
+  <div id="profile" class="drawer glass">
+    <button class="close" id="profile-close">✕</button>
+    <div class="p-head">
+      <div class="avatar big" id="p-avatar">?</div>
+      <div>
+        <h2 id="p-name">—</h2>
+        <div id="p-email" class="muted"></div>
+      </div>
+    </div>
+    <div class="stats">
+      <div class="stat"><b id="s-countries">0</b><small>стран</small></div>
+      <div class="stat"><b id="s-marks">0</b><small>отметок</small></div>
+      <div class="stat"><b id="s-world">0%</b><small>мира</small></div>
+    </div>
+    <h3>Мои места</h3>
+    <div id="places"></div>
+    <div class="p-actions">
+      <button id="clear-all" class="btn-ghost">🗑️ Очистить всё</button>
+      <button id="logout" class="btn-ghost">Выйти</button>
+    </div>
+    <div id="mode-note" class="muted small"></div>
+  </div>
+
+  <div id="toast"></div>
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>
