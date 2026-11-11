@@ -2,6 +2,12 @@ import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import './style.css';
 import * as db from './db.js';
+import { t, lang, setLang, applyStatic, LANGS } from './i18n.js';
+import countries from 'i18n-iso-countries';
+import hyNames from 'i18n-iso-countries/langs/hy.json';
+import ruNames from 'i18n-iso-countries/langs/ru.json';
+import enNames from 'i18n-iso-countries/langs/en.json';
+[hyNames, ruNames, enNames].forEach((l) => countries.registerLocale(l));
 import { Protocol } from 'pmtiles';
 
 const pmt = new Protocol(); maplibregl.addProtocol('pmtiles', pmt.tile);
@@ -23,10 +29,10 @@ function toast(t) {
   clearTimeout(toast.t); toast.t = setTimeout(() => el.classList.remove('show'), 2200);
 }
 const HINTS = {
-  pan: 'Крути глобус, приближай колёсиком или щипком — до улиц',
-  brush: 'Рисуй по карте — кисть привязана к местности и масштабируется вместе с ней',
-  fill: 'Нажми на место — зальётся то, на что смотришь: страна, регион, остров, город, район',
-  eraser: 'Нажми или проведи по отметке, чтобы стереть',
+  get pan() { return t('hintPan'); },
+  get brush() { return t('hintBrush'); },
+  get fill() { return t('hintFillHover'); },
+  get eraser() { return t('hintEraser'); },
 };
 
 // ---------------- MAP ----------------
@@ -57,6 +63,7 @@ map.on('style.load', () => {
   });
   firstSymbol = map.getStyle().layers.find((l) => l.type === 'symbol')?.id;
   grayscale();
+  localizeLabels();
   setupLayers();
   spin();
 });
@@ -73,6 +80,12 @@ function toGray(str) {
 }
 const isColor = (x) => typeof x === 'string' && /^(#|rgb|hsl)/i.test(x.trim());
 const grayDeep = (v) => Array.isArray(v) ? v.map(grayDeep) : isColor(v) ? toGray(v) : v;
+function localizeLabels() {
+  for (const l of map.getStyle().layers) {
+    if (l.type !== 'symbol' || !l.layout?.['text-field'] || !JSON.stringify(l.layout['text-field']).includes('name')) continue;
+    map.setLayoutProperty(l.id, 'text-field', ['coalesce', ['get', 'name:' + lang], ['get', 'name:en'], ['get', 'name']]);
+  }
+}
 function grayscale() {
   for (const l of map.getStyle().layers) {
     if (l.type === 'raster') try { map.setPaintProperty(l.id, 'raster-saturation', -1); } catch {}
@@ -134,10 +147,10 @@ async function setupLayers() {
 
   try {
     const gj = await (await fetch(COUNTRIES_URL)).json();
-    gj.features.forEach((f) => { ISO_RU[f.properties.ADM0_A3] = ISO_RU[f.properties.ISO_A3] = f.properties.NAME_RU || f.properties.NAME; f.properties = { ADM0_A3: f.properties.ADM0_A3, name: f.properties.NAME_RU || f.properties.NAME }; });
+    gj.features.forEach((f) => { for (const k of [f.properties.ADM0_A3, f.properties.ISO_A3]) ISO2[k] = { a2: f.properties.ISO_A2_EH || f.properties.ISO_A2, ru: f.properties.NAME_RU, en: f.properties.NAME }; f.properties = { ADM0_A3: f.properties.ADM0_A3, name: f.properties.NAME_RU || f.properties.NAME }; });
     state.countries = gj;
     map.getSource('countries').setData(gj);
-  } catch { toast('Не удалось загрузить границы стран'); }
+  } catch { toast(t('bordersFail')); }
   render();
 }
 
@@ -208,22 +221,23 @@ function render() {
 }
 
 function renderProfile() {
+  const OCEAN = t('ocean');
   const groups = {};
   for (const m of state.marks) {
     if (!m.label && state.countries) { const c = coordsOf(m); m.label = countryAt(c[Math.floor(c.length / 2)])?.name || null; }
-    const k = m.label || 'Океан / неизвестно';
+    const k = placeLabel(m) || OCEAN;
     (groups[k] ||= { list: [], color: m.color, full: false }).list.push(m);
     if (m.kind === 'country' || m.data?.level === 0) groups[k].full = true;
   }
-  const names = Object.keys(groups).filter((n) => n !== 'Океан / неизвестно');
+  const names = Object.keys(groups).filter((n) => n !== OCEAN);
   $('#s-countries').textContent = names.length;
   $('#s-marks').textContent = state.marks.length;
   $('#s-world').textContent = Math.round((names.length / 195) * 1000) / 10 + '%';
   const box = $('#places'); box.innerHTML = '';
-  if (!state.marks.length) box.innerHTML = '<p class="muted small">Пока пусто. Возьми кисть 🖌️ и раскрась первое место!</p>';
+  if (!state.marks.length) box.innerHTML = `<p class="muted small">${t('empty')}</p>`;
   Object.entries(groups).sort((a, b) => b[1].list.length - a[1].list.length).forEach(([name, g], i) => {
     const b = document.createElement('button'); b.className = 'place'; b.style.animationDelay = i * 40 + 'ms';
-    b.innerHTML = `<i style="background:${g.color};box-shadow:0 0 10px ${g.color}"></i><span></span><em>${g.full ? 'вся страна' : g.list.length + ' отм.'}</em>`;
+    b.innerHTML = `<i style="background:${g.color};box-shadow:0 0 10px ${g.color}"></i><span></span><em>${g.full ? t('wholeCountry') : t('nMarks', { n: g.list.length })}</em>`;
     b.querySelector('span').textContent = name;
     b.onclick = () => { fitMarks(g.list); if (innerWidth < 640) $('#profile').classList.remove('open'); };
     box.appendChild(b);
@@ -233,17 +247,19 @@ function renderProfile() {
 // ---------------- marks ----------------
 async function addMark(kind, data, labelPt, label) {
   const c = label ? { name: label } : countryAt(labelPt);
+  if (!data.iso && (c?.ADM0_A3 || data.tileIso)) data.iso = data.tileIso || c.ADM0_A3;
+  delete data.tileIso;
   const m = { id: crypto.randomUUID(), kind, color: state.color, opacity: state.opacity, size: state.size,
     zoom: map.getZoom(), data, label: kind === 'country' ? data.name : c?.name || null, created_at: new Date().toISOString() };
   state.marks.push(m); state.undo.push(m.id); render();
   try { await db.saveMark(state.user.id, m); }
-  catch (e) { state.marks = state.marks.filter((x) => x.id !== m.id); render(); toast('Ошибка сохранения: ' + e.message); }
+  catch (e) { state.marks = state.marks.filter((x) => x.id !== m.id); render(); toast(t('saveErr') + e.message); }
 }
 async function removeMark(id) {
   const m = state.marks.find((x) => x.id === id); if (!m) return;
   state.marks = state.marks.filter((x) => x.id !== id); render();
   try { await db.deleteMark(state.user.id, id); }
-  catch (e) { state.marks.push(m); render(); toast('Ошибка удаления: ' + e.message); }
+  catch (e) { state.marks.push(m); render(); toast(t('delErr') + e.message); }
 }
 
 // ---------------- tools ----------------
@@ -274,7 +290,7 @@ function getJSON(u) {
       try { const r = await fetch(u); if (r.ok) return r.json(); } catch {}
       await new Promise((r) => setTimeout(r, 1500 * (attempt + 1)));
     }
-    throw new Error('сервер границ сейчас занят, попробуй через минуту');
+    throw new Error(t('busy'));
   });
   chain = job.catch(() => {});
   return job;
@@ -288,12 +304,12 @@ const containCache = new Map();
 async function containing(lng, lat) {
   const key = lng.toFixed(2) + ',' + lat.toFixed(2);
   if (containCache.has(key)) return containCache.get(key);
-  const rv = await getJSON(`${NOM}/reverse?format=json&zoom=18&lat=${lat}&lon=${lng}&accept-language=ru&addressdetails=1`);
+  const rv = await getJSON(`${NOM}/reverse?format=json&zoom=18&lat=${lat}&lon=${lng}&accept-language=${lang}&addressdetails=1`);
   if (rv.error) { containCache.set(key, []); return []; }
   const d = await getJSON(`${NOM}/details?osmtype=${rv.osm_type[0].toUpperCase()}&osmid=${rv.osm_id}&addressdetails=1&format=json`);
   const ids = [...new Set((d.address || []).filter((x) => x.osm_id && x.isaddress !== false && x.rank_address >= 5 && x.rank_address <= 25)
     .map((x) => x.osm_type + x.osm_id))];
-  const lk = ids.length ? await getJSON(`${NOM}/lookup?format=geojson&polygon_geojson=1&polygon_threshold=0.0005&accept-language=ru&osm_ids=${ids.join(',')}`) : { features: [] };
+  const lk = ids.length ? await getJSON(`${NOM}/lookup?format=geojson&polygon_geojson=1&polygon_threshold=0.0005&accept-language=${lang}&osm_ids=${ids.join(',')}`) : { features: [] };
   const country = rv.address?.country || null;
   const list = lk.features.filter((f) => isPoly(f.geometry)).map((f) => ({
     osm: f.properties.osm_type[0].toUpperCase() + f.properties.osm_id, name: f.properties.name || f.properties.display_name.split(',')[0],
@@ -305,7 +321,7 @@ async function containing(lng, lat) {
   return uniq;
 }
 async function countryGeom(a) {
-  const f = (await getJSON(`${NOM}/reverse?format=geojson&zoom=3&polygon_geojson=1&polygon_threshold=0.02&accept-language=ru&lat=${a.lat}&lon=${a.lng}`)).features?.[0];
+  const f = (await getJSON(`${NOM}/reverse?format=geojson&zoom=3&polygon_geojson=1&polygon_threshold=0.02&accept-language=${lang}&lat=${a.lat}&lon=${a.lng}`)).features?.[0];
   if (!f || !isPoly(f.geometry)) return null;
   return { osm: f.properties.osm_type[0].toUpperCase() + f.properties.osm_id, name: f.properties.name, geom: f.geometry };
 }
@@ -344,8 +360,14 @@ function pickAt(point) {
   for (const c of cands) { c.bbox = featBBox(c.layer, c.id); if (fitsView(c.bbox)) return c; }
   return { ...cands[cands.length - 1], deepest: true };
 }
-const ISO_RU = {};
-const countryName = (iso) => ISO_RU[iso] || iso;
+// country names in the UI language (Armenian via the browser's Intl data)
+const ISO2 = {};
+function countryName(iso) {
+  const c = ISO2[iso] || { a2: countries.alpha3ToAlpha2(iso) };
+  const n = countries.getName(c.a2 && c.a2 !== '-99' ? c.a2 : iso, lang);
+  return n || (lang === 'ru' && c.ru) || c.en || iso;
+}
+const placeLabel = (m) => (m.data?.iso ? countryName(m.data.iso) : m.label);
 
 let hovered = null;
 function setHover(c) {
@@ -354,10 +376,10 @@ function setHover(c) {
   if (hovered) { map.setFilter(`hover-${hovered.layer}`, NONE_ID); map.setFilter(`hover-${hovered.layer}-fill`, NONE_ID); }
   hovered = c;
   const h = $('#hint');
-  if (!c) { h.textContent = touch ? '🪣 Наведи прицел на сушу' : '🪣 Наведи на сушу — подсвечу, что зальётся'; return; }
+  if (!c) { h.textContent = touch ? t('hintAimLand') : t('hintFillHover'); return; }
   const f = ['==', ['get', 'id'], c.id];
   map.setFilter(`hover-${c.layer}`, f); map.setFilter(`hover-${c.layer}-fill`, f);
-  const lvl = { adm0: 'страна', adm1: 'регион', adm2: 'округ', adm3: 'город / уезд' }[c.layer];
+  const lvl = t('lvl_' + c.layer);
   h.textContent = `🪣 ${c.layer === 'adm0' ? countryName(c.iso) : c.name} · ${lvl}`;
 }
 let raf = 0, lastPt = null;
@@ -384,7 +406,7 @@ function updateHint() {
   $('#crosshair').classList.toggle('hidden', !(touch && state.tool === 'fill'));
   const h = $('#hint');
   if (state.tool !== 'fill') { if (hovered) setHover(null); h.textContent = HINTS[state.tool]; return; }
-  h.textContent = touch ? '🪣 Наведи прицел на место — подсвечу, что зальётся, затем тапни' : '🪣 Наведи на сушу — подсвечу, что зальётся';
+  h.textContent = touch ? t('hintFillTouch') : t('hintFillHover');
   centerPreview();
 }
 
@@ -392,7 +414,7 @@ let filling = false;
 map.on('click', async (e) => {
   if (state.tool !== 'fill' || filling) return;
   const c = pickAt(e.point);
-  if (!c) return toast('🌊 Тут нет суши — океан не заливается');
+  if (!c) return toast(t('noLand'));
   // deeper than our data (zoomed into a city)? try OSM for the town/district, fall back to our boundary
   if (c.deepest && map.getZoom() >= 11) {
     filling = true; $('#map').classList.add('loading');
@@ -401,17 +423,17 @@ map.on('click', async (e) => {
       const v = viewSize(); const a = list.find((x) => x.w <= v.w * 1.1 && x.h <= v.h * 1.1) || list[list.length - 1];
       if (a) {
         const dup = state.marks.find((m) => m.data.osm === a.osm);
-        if (dup) { await removeMark(dup.id); return toast(`${a.name} — заливка снята`); }
+        if (dup) { await removeMark(dup.id); return toast(t('unfilled', { name: a.name })); }
         await addMark('area', { geom: a.geom, name: a.name, osm: a.osm }, [e.lngLat.lng, e.lngLat.lat], countryName(c.iso));
-        return toast(`🎉 ${a.name} раскрашено!`);
+        return toast(t('filled', { name: a.name }));
       }
     } catch {} finally { filling = false; $('#map').classList.remove('loading'); }
   }
   const dup = state.marks.find((m) => m.data.tile?.id === c.id);
   const name = c.layer === 'adm0' ? countryName(c.iso) : c.name;
-  if (dup) { await removeMark(dup.id); return toast(`${name} — заливка снята`); }
-  await addMark('area', { tile: { layer: c.layer, id: c.id }, name, bbox: c.bbox || featBBox(c.layer, c.id) }, [e.lngLat.lng, e.lngLat.lat], countryName(c.iso));
-  toast(`🎉 ${name} раскрашено!`);
+  if (dup) { await removeMark(dup.id); return toast(t('unfilled', { name })); }
+  await addMark('area', { tile: { layer: c.layer, id: c.id }, name, tileIso: c.iso, bbox: c.bbox || featBBox(c.layer, c.id) }, [e.lngLat.lng, e.lngLat.lat], countryName(c.iso));
+  toast(t('filled', { name }));
 });
 function viewSize() {
   const b = map.getBounds(); const c = map.getCenter();
@@ -475,9 +497,9 @@ function eraseAt(x, y) {
 async function undo() {
   while (state.undo.length) {
     const id = state.undo.pop();
-    if (state.marks.some((m) => m.id === id)) { await removeMark(id); toast('Отменено'); return; }
+    if (state.marks.some((m) => m.id === id)) { await removeMark(id); toast(t('undone')); return; }
   }
-  toast('Нечего отменять');
+  toast(t('nothingUndo'));
 }
 
 // ---------------- palette ----------------
@@ -511,7 +533,7 @@ $('#search').addEventListener('input', (e) => {
   if (q.length < 2) return box.classList.add('hidden');
   st = setTimeout(async () => {
     try {
-      const r = await fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=6&accept-language=ru&q=${encodeURIComponent(q)}`);
+      const r = await fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=6&accept-language=${lang}&q=${encodeURIComponent(q)}`);
       const res = await r.json(); box.innerHTML = '';
       res.forEach((p) => {
         const b = document.createElement('button'); b.textContent = p.display_name;
@@ -531,20 +553,20 @@ $('#search').addEventListener('input', (e) => {
 $('#profile-btn').onclick = () => $('#profile').classList.toggle('open');
 $('#profile-close').onclick = () => $('#profile').classList.remove('open');
 $('#clear-all').onclick = async () => {
-  if (!state.marks.length) return toast('И так пусто');
-  if (!confirm(`Удалить все ${state.marks.length} отметок? Это нельзя отменить.`)) return;
+  if (!state.marks.length) return toast(t('alreadyEmpty'));
+  if (!confirm(t('confirmClear', { n: state.marks.length }))) return;
   for (const m of [...state.marks]) await removeMark(m.id);
-  state.undo = []; toast('Всё очищено 🧹');
+  state.undo = []; toast(t('cleared'));
 };
 $('#logout').onclick = async () => { await db.signOut(); location.reload(); };
 
 // ---------------- auth ----------------
 let authMode = 'login';
-document.querySelectorAll('.tab').forEach((t) => (t.onclick = () => {
-  authMode = t.dataset.mode;
-  document.querySelectorAll('.tab').forEach((x) => x.classList.toggle('active', x === t));
+document.querySelectorAll('.tab').forEach((tab) => (tab.onclick = () => {
+  authMode = tab.dataset.mode;
+  document.querySelectorAll('.tab').forEach((x) => x.classList.toggle('active', x === tab));
   $('#auth-form').classList.toggle('signup', authMode === 'signup');
-  $('#auth-submit').textContent = authMode === 'signup' ? 'Создать аккаунт' : 'Войти';
+  $('#auth-submit').textContent = authMode === 'signup' ? t('doSignup') : t('doLogin');
   $('#auth-msg').textContent = '';
 }));
 $('#auth-form').onsubmit = async (e) => {
@@ -554,12 +576,33 @@ $('#auth-form').onsubmit = async (e) => {
   try {
     if (authMode === 'signup') {
       const r = await db.signUp(email, pass, name);
-      if (r.needsConfirm) { msg.className = 'msg ok'; msg.textContent = '📧 Мы отправили письмо — подтверди email и войди.'; return; }
+      if (r.needsConfirm) { msg.className = 'msg ok'; msg.textContent = t('checkEmail'); return; }
       await enter(r.user);
     } else await enter(await db.signIn(email, pass));
   } catch (err) { msg.textContent = err.message; }
   finally { $('#auth-submit').disabled = false; }
 };
+
+function buildLangSwitches() {
+  for (const box of document.querySelectorAll('.lang-switch')) {
+    box.innerHTML = '';
+    for (const [code, label] of Object.entries(LANGS)) {
+      const b = document.createElement('button'); b.textContent = label; b.classList.toggle('active', code === lang);
+      b.onclick = () => changeLang(code); box.appendChild(b);
+    }
+  }
+}
+function changeLang(code) {
+  setLang(code); buildLangSwitches();
+  $('#auth-submit').textContent = authMode === 'signup' ? t('doSignup') : t('doLogin');
+  $('#mode-note').textContent = db.cloud ? t('modeCloud') : t('modeLocal');
+  if (map.isStyleLoaded()) localizeLabels();
+  if (state.user) { updateHint(); renderProfile(); }
+}
+// keep the globe centered whenever the visible area changes (mobile keyboard, rotation, login overlay)
+const refit = () => map.resize();
+window.visualViewport?.addEventListener('resize', refit);
+addEventListener('orientationchange', () => setTimeout(refit, 300));
 
 async function enter(user) {
   state.user = user;
@@ -567,15 +610,21 @@ async function enter(user) {
   ['#topbar', '#toolbar', '#palette'].forEach((s) => $(s).classList.remove('hidden'));
   $('#profile-btn').textContent = $('#p-avatar').textContent = (user.name || user.email)[0].toUpperCase();
   $('#p-name').textContent = user.name; $('#p-email').textContent = user.email;
-  $('#mode-note').textContent = db.cloud ? '☁️ Синхронизация: Supabase' : '💾 Локальный режим: данные только в этом браузере';
+  $('#mode-note').textContent = db.cloud ? t('modeCloud') : t('modeLocal');
   setTool('pan');
-  try { state.marks = await db.loadMarks(user.id); } catch (e) { toast('Ошибка загрузки: ' + e.message); }
-  const go = () => { render(); if (state.marks.length) { spinning = false; setTimeout(() => fitMarks(state.marks), 400); } };
+  try { state.marks = await db.loadMarks(user.id); } catch (e) { toast(t('loadErr') + e.message); }
+  const go = () => {
+    map.resize(); render();
+    if (state.marks.length) { spinning = false; setTimeout(() => fitMarks(state.marks), 400); }
+    else map.easeTo({ center: map.getCenter(), zoom: Math.max(1.6, Math.min(map.getZoom(), 2.2)), padding: 0, duration: 800 });
+  };
+  setTimeout(() => map.resize(), 650); // after the login overlay fades out
   map.loaded() ? go() : map.once('load', go);
-  toast(`Привет, ${user.name}! 👋`);
+  toast(t('hello', { name: user.name }));
 }
 
 (async () => {
+  applyStatic(); buildLangSwitches(); $('#auth-submit').textContent = t('doLogin');
   if (!db.cloud) $('#local-note').classList.remove('hidden');
   const u = await db.currentUser();
   if (u) enter(u);

@@ -1,11 +1,11 @@
 <!doctype html>
-<html lang="ru">
+<html lang="en">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <title>World Explorer — раскрась свой мир</title>
+  <title>World Explorer</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Noto+Sans+Armenian:wght@400;600;700;800&display=swap" rel="stylesheet" />
 </head>
 <body>
   <div id="stars"></div>
@@ -14,22 +14,23 @@
   <!-- AUTH -->
   <div id="auth" class="overlay">
     <div class="auth-card glass">
+      <div class="lang-switch" id="lang-auth"></div>
       <div class="logo">🌍</div>
       <h1>World Explorer</h1>
-      <p class="sub">Раскрась места, где ты реально был — от страны до улицы.</p>
+      <p class="sub" data-i18n="sub"></p>
       <div class="tabs">
-        <button class="tab active" data-mode="login">Вход</button>
-        <button class="tab" data-mode="signup">Регистрация</button>
+        <button class="tab active" data-mode="login" data-i18n="login"></button>
+        <button class="tab" data-mode="signup" data-i18n="signup"></button>
       </div>
       <form id="auth-form">
-        <input id="f-name" type="text" placeholder="Имя (для профиля)" class="signup-only" autocomplete="nickname" />
+        <input id="f-name" type="text" data-i18n-ph="namePh" class="signup-only" autocomplete="nickname" />
         <input id="f-email" type="email" placeholder="Email" required autocomplete="email" />
-        <input id="f-pass" type="password" placeholder="Пароль (мин. 6 символов)" required minlength="6" autocomplete="current-password" />
-        <button type="submit" class="btn-primary" id="auth-submit">Войти</button>
+        <input id="f-pass" type="password" data-i18n-ph="passPh" required minlength="6" autocomplete="current-password" />
+        <button type="submit" class="btn-primary" id="auth-submit"></button>
         <div id="auth-msg" class="msg"></div>
       </form>
       <div id="local-note" class="local-note hidden">
-        ⚠️ Supabase ещё не подключён — работает локальный режим (данные хранятся в этом браузере).
+        <span data-i18n="localNote"></span>
       </div>
     </div>
   </div>
@@ -38,34 +39,34 @@
   <header id="topbar" class="glass hidden">
     <div class="brand">🌍 <span>World Explorer</span></div>
     <div class="search">
-      <input id="search" placeholder="Найти место: Шанхай, Бали…" />
+      <input id="search" data-i18n-ph="searchPh" />
       <div id="search-results" class="glass hidden"></div>
     </div>
-    <button id="profile-btn" class="avatar" title="Профиль">?</button>
+    <button id="profile-btn" class="avatar" data-i18n-title="profile">?</button>
   </header>
 
   <!-- TOOLBAR -->
   <aside id="toolbar" class="glass hidden">
-    <button class="tool active" data-tool="pan" title="Двигать (V)"><span>✋</span><small>Двигать</small></button>
-    <button class="tool" data-tool="brush" title="Кисть (B)"><span>🖌️</span><small>Кисть</small></button>
-    <button class="tool" data-tool="fill" title="Заливка (F)"><span>🪣</span><small>Заливка</small></button>
-    <button class="tool" data-tool="eraser" title="Ластик (E)"><span>🧽</span><small>Ластик</small></button>
+    <button class="tool active" data-tool="pan" title="V"><span>✋</span><small data-i18n="pan"></small></button>
+    <button class="tool" data-tool="brush" title="B"><span>🖌️</span><small data-i18n="brush"></small></button>
+    <button class="tool" data-tool="fill" title="F"><span>🪣</span><small data-i18n="fill"></small></button>
+    <button class="tool" data-tool="eraser" title="E"><span>🧽</span><small data-i18n="eraser"></small></button>
     <div class="sep"></div>
-    <button class="tool" id="undo" title="Отменить (Ctrl+Z)"><span>↩️</span><small>Отмена</small></button>
+    <button class="tool" id="undo" title="Ctrl+Z"><span>↩️</span><small data-i18n="undo"></small></button>
   </aside>
 
   <!-- PALETTE -->
   <div id="palette" class="glass hidden">
     <div id="colors"></div>
-    <label class="color-custom" title="Свой цвет"><input type="color" id="custom-color" value="#ff3d7f" /><span>＋</span></label>
-    <button id="more-btn" class="more-btn" title="Размер и прозрачность">⚙️</button>
+    <label class="color-custom" data-i18n-title="customColor"><input type="color" id="custom-color" value="#ff3d7f" /><span>＋</span></label>
+    <button id="more-btn" class="more-btn" data-i18n-title="sizeOpacity">⚙️</button>
     <div class="slider">
-      <small>Размер</small>
+      <small data-i18n="size"></small>
       <input type="range" id="size" min="2" max="80" value="18" />
       <div id="size-preview"></div>
     </div>
     <div class="slider">
-      <small>Прозрачность</small>
+      <small data-i18n="opacity"></small>
       <input type="range" id="opacity" min="15" max="100" value="65" />
     </div>
   </div>
@@ -84,15 +85,17 @@
       </div>
     </div>
     <div class="stats">
-      <div class="stat"><b id="s-countries">0</b><small>стран</small></div>
-      <div class="stat"><b id="s-marks">0</b><small>отметок</small></div>
-      <div class="stat"><b id="s-world">0%</b><small>мира</small></div>
+      <div class="stat"><b id="s-countries">0</b><small data-i18n="countries"></small></div>
+      <div class="stat"><b id="s-marks">0</b><small data-i18n="marks"></small></div>
+      <div class="stat"><b id="s-world">0%</b><small data-i18n="world"></small></div>
     </div>
-    <h3>Мои места</h3>
+    <h3 data-i18n="language"></h3>
+    <div class="lang-switch wide" id="lang-profile"></div>
+    <h3 data-i18n="myPlaces"></h3>
     <div id="places"></div>
     <div class="p-actions">
-      <button id="clear-all" class="btn-ghost">🗑️ Очистить всё</button>
-      <button id="logout" class="btn-ghost">Выйти</button>
+      <button id="clear-all" class="btn-ghost" data-i18n="clearAll"></button>
+      <button id="logout" class="btn-ghost" data-i18n="logout"></button>
     </div>
     <div id="mode-note" class="muted small"></div>
   </div>

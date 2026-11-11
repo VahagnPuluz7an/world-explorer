@@ -10,7 +10,7 @@
 }
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; overflow: hidden; background: var(--bg); color: var(--text);
-  font-family: Inter, system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+  font-family: Inter, 'Noto Sans Armenian', system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
 button { font: inherit; color: inherit; cursor: pointer; border: 0; background: none; }
 input { font: inherit; color: inherit; }
 .hidden { display: none !important; }
@@ -190,3 +190,11 @@ html, body { height: 100dvh; }
 }
 
 #map.loading canvas { cursor: progress !important; }
+
+/* language switch */
+.auth-card { position: relative; }
+.lang-switch { display: flex; gap: 4px; background: rgba(255,255,255,.06); border-radius: 10px; padding: 3px; }
+#lang-auth { position: absolute; top: 14px; right: 14px; }
+.lang-switch button { padding: 5px 9px; border-radius: 7px; font-size: 12px; font-weight: 700; color: var(--muted); transition: .2s; }
+.lang-switch button.active { background: rgba(255,255,255,.14); color: var(--text); }
+.lang-switch.wide { margin-bottom: 8px; } .lang-switch.wide button { flex: 1; padding: 8px; font-size: 13px; }

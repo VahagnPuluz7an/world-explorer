@@ -1,5 +1,6 @@
 // Data layer: Supabase when configured, otherwise localStorage ("local mode").
 import { createClient } from '@supabase/supabase-js';
+import { t } from './i18n.js';
 
 const URL = import.meta.env.VITE_SUPABASE_URL;
 const KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
@@ -33,7 +34,7 @@ export async function signUp(email, password, name) {
     return { user: await currentUser() };
   }
   const users = ls.get('we_users', {});
-  if (users[email]) throw new Error('Такой email уже зарегистрирован');
+  if (users[email]) throw new Error(t('emailTaken'));
   const user = { id: crypto.randomUUID(), email, name: name || email.split('@')[0] };
   users[email] = { ...user, pass: await hash(password) };
   ls.set('we_users', users); ls.set('we_session', user);
@@ -43,11 +44,11 @@ export async function signUp(email, password, name) {
 export async function signIn(email, password) {
   if (cloud) {
     const { error } = await sb.auth.signInWithPassword({ email, password });
-    if (error) throw new Error(error.message === 'Invalid login credentials' ? 'Неверный email или пароль' : error.message);
+    if (error) throw new Error(error.message === 'Invalid login credentials' ? t('badLogin') : error.message);
     return currentUser();
   }
   const u = ls.get('we_users', {})[email];
-  if (!u || u.pass !== (await hash(password))) throw new Error('Неверный email или пароль');
+  if (!u || u.pass !== (await hash(password))) throw new Error(t('badLogin'));
   const user = { id: u.id, email: u.email, name: u.name };
   ls.set('we_session', user);
   return user;
