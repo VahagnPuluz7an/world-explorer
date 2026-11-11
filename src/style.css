@@ -198,3 +198,7 @@ html, body { height: 100dvh; }
 .lang-switch button { padding: 5px 9px; border-radius: 7px; font-size: 12px; font-weight: 700; color: var(--muted); transition: .2s; }
 .lang-switch button.active { background: rgba(255,255,255,.14); color: var(--text); }
 .lang-switch.wide { margin-bottom: 8px; } .lang-switch.wide button { flex: 1; padding: 8px; font-size: 13px; }
+
+/* while the map is moving: no live backdrop blur over the WebGL canvas, no star animation */
+body.moving .glass { backdrop-filter: none; -webkit-backdrop-filter: none; background: rgba(16, 18, 34, 0.9); }
+body.moving #stars { animation-play-state: paused; }

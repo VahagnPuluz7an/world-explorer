@@ -41,7 +41,24 @@ const map = new maplibregl.Map({
   style: 'https://tiles.openfreemap.org/styles/liberty',
   center: [105, 25], zoom: 1.5, maxPitch: 70,
   attributionControl: { compact: true },
+  pixelRatio: Math.min(devicePixelRatio || 1, 2), // phones with 3x screens render 2.25x fewer pixels
+  fadeDuration: 120,
 });
+// pause expensive CSS (glass blur, star drift) while the map moves
+map.on('movestart', () => document.body.classList.add('moving'));
+map.on('moveend', () => document.body.classList.remove('moving'));
+
+// Boundary tiles are only downloaded for layers that are visible:
+// hit/hover layers only while the fill tool is on, paint layers only for levels that have fills.
+function updateAdmVisibility() {
+  if (!map.getLayer('hit-adm0')) return;
+  const used = new Set(state.marks.filter((m) => m.data?.tile).map((m) => m.data.tile.layer));
+  for (const l of LV) {
+    const pick = state.tool === 'fill' ? 'visible' : 'none';
+    for (const id of [`hit-${l}`, `hover-${l}`, `hover-${l}-fill`]) map.setLayoutProperty(id, 'visibility', pick);
+    for (const id of [`paint-${l}`, `paint-${l}-edge`]) map.setLayoutProperty(id, 'visibility', used.has(l) ? 'visible' : 'none');
+  }
+}
 map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), 'bottom-right');
 map.addControl(new maplibregl.GeolocateControl({ fitBoundsOptions: { maxZoom: 13 } }), 'bottom-right');
 
@@ -63,6 +80,7 @@ map.on('style.load', () => {
   });
   firstSymbol = map.getStyle().layers.find((l) => l.type === 'symbol')?.id;
   grayscale();
+  for (const id of ['building-3d']) if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', 'none');
   localizeLabels();
   setupLayers();
   spin();
@@ -107,7 +125,6 @@ async function setupLayers() {
   map.addSource('draft', { type: 'geojson', data: empty });
   map.addSource('countries', { type: 'geojson', data: empty });
 
-  map.addLayer({ id: 'countries-hit', type: 'fill', source: 'countries', paint: { 'fill-opacity': 0 } }, firstSymbol);
   map.addLayer({ id: 'countries-fill', type: 'fill', source: 'countries', filter: NONE,
     paint: { 'fill-color': '#fff', 'fill-opacity': ['interpolate', ['linear'], ['zoom'], 2, 0.6, 8, 0.35] } }, firstSymbol);
   map.addLayer({ id: 'countries-line', type: 'line', source: 'countries', filter: NONE,
@@ -217,6 +234,7 @@ function render() {
     map.setFilter('countries-fill', filter); map.setFilter('countries-line', filter);
     map.setPaintProperty('countries-fill', 'fill-color', color);
   } else { map.setFilter('countries-fill', NONE); map.setFilter('countries-line', NONE); }
+  updateAdmVisibility();
   renderProfile();
 }
 
@@ -265,6 +283,7 @@ async function removeMark(id) {
 // ---------------- tools ----------------
 function setTool(t) {
   state.tool = t;
+  updateAdmVisibility();
   document.querySelectorAll('.tool[data-tool]').forEach((b) => b.classList.toggle('active', b.dataset.tool === t));
   const el = $('#map'); el.classList.remove('painting', 'erasing', 'picking');
   if (t === 'brush') el.classList.add('painting');
